@@ -701,7 +701,7 @@ function pickPreview(items, weightFn) {
 
 async function loadMsgPreview() {
   const box = document.getElementById('msg-preview');
-    try {
+  try {
     const r = await fetch('http://101.43.30.160:8360/api/comment?type=recent&count=50',
                           { headers: { Accept: 'application/json' } });
     const j = await r.json();
