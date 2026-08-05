@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TwitterArchiver · 推特存档计划</title>
+<link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
+<link rel="icon" type="image/png" href="./icons/favicon.png">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<style>
+:root {
+  --bg:              #f7f9f9;
+  --bg-card:         #ffffff;
+  --bg-hover:        #f0f3f4;
+  --border:          #e6eaed;
+  --text:            #0f1419;
+  --text-dim:        #536471;
+  --text-muted:      #aab8c2;
+  --accent:          #1d9bf0;
+  --featured-border: #c8960c;
+}
+body.dark {
+  --bg:              #000000;
+  --bg-card:         #0a0a0a;
+  --bg-hover:        #111111;
+  --border:          #2f3336;
+  --text:            #e7e9ea;
+  --text-dim:        #71767b;
+  --text-muted:      #3e4144;
+  --accent:          #1d9bf0;
+  --featured-border: #FFD700;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  min-height: 100vh;
+  transition: background .25s, color .25s;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: none; }
+
+/* ── 进场动画 ── */
+@keyframes heroIn {
+  from { opacity: 0; transform: translateY(28px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.anim-1 { animation: heroIn .7s .05s cubic-bezier(.22,.68,0,1.2) both; }
+.anim-2 { animation: heroIn .7s .2s  cubic-bezier(.22,.68,0,1.2) both; }
+.anim-3 { animation: heroIn .7s .38s cubic-bezier(.22,.68,0,1.2) both; }
+.anim-4 { animation: heroIn .7s .52s cubic-bezier(.22,.68,0,1.2) both; }
+
+/* 左上角导航：留言板（钉在页面顶部，随页面滚动，不浮动盖住内容） */
+.top-nav {
+  position: absolute;
+  top: 14px; left: 16px;
+  display: flex; align-items: center; gap: 8px;
+  z-index: 99;
+}
+.top-nav a {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 38px; padding: 0 15px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 999px;
+  font-size: 14px; font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  transition: background .15s, box-shadow .15s, transform .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.top-nav a .nav-ico { font-size: 17px; line-height: 1; }   /* 图标与主题按钮(17px)一致 */
+/* hover 只在真正支持悬停的设备生效，避免触屏点击后样式粘滞 */
+@media (hover: hover) {
+  .top-nav a:hover { box-shadow: 0 2px 8px rgba(0,0,0,.14); background: var(--bg-hover); transform: translateY(-1px); }
+}
+@media (max-width: 600px) {
+  .top-nav a .nav-label { display: none; }      /* 窄屏只留图标 */
+  .top-nav a { padding: 0; width: 38px; justify-content: center; }
+  .top-nav .nav-pc-only { display: none; }       /* 手机端隐藏留言板（底部已有入口）*/
+}
+
+/* ── Hero 区 ── */
+.hero {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 24px 60px;
+  text-align: center;
+}
+.hero-title {
+  font-size: clamp(2rem, 6vw, 3.2rem);
+  font-weight: 800;
+  letter-spacing: -.5px;
+  line-height: 1.1;
+  margin-bottom: 10px;
+}
+.hero-title span { color: var(--accent); }
+.hero-sub {
+  font-size: clamp(.9rem, 2.5vw, 1.05rem);
+  color: var(--text-dim);
+  margin-bottom: 48px;
+}
+.memorial {
+  max-width: 480px;
+  padding: 28px 24px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  line-height: 1.95;
+  font-size: .93rem;
+  color: var(--text-dim);
+}
+.memorial .name { color: var(--text); font-weight: 600; }
+.memorial .quote { display: block; margin-top: 14px; }
+.memorial .tagline {
+  display: block;
+  margin-top: 18px;
+  font-style: italic;
+  font-size: .85rem;
+  opacity: .6;
+}
+.scroll-hint {
+  margin-top: 40px;
+  font-size: .78rem;
+  color: var(--text-dim);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  animation: bounce 2s 1.2s ease-in-out infinite;
+}
+@keyframes bounce {
+  0%,100% { transform: translateY(0); }
+  50%      { transform: translateY(6px); }
+}
+.scroll-hint svg { opacity: .6; }
+
+/* ── 主题按钮 ── */
+.theme-btn {
+  position: absolute;
+  top: 14px; right: 16px;
+  z-index: 99;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 50%;
+  width: 38px; height: 38px;
+  font-size: 17px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s, box-shadow .15s;
+  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+}
+.theme-btn { -webkit-tap-highlight-color: transparent; }
+@media (hover: hover) {
+  .theme-btn:hover { box-shadow: 0 2px 8px rgba(0,0,0,.14); }
+}
+.top-nav a:active, .theme-btn:active { transform: scale(.92); transition-duration: .06s; }
+
+/* ── 仓库区 ── */
+.repos {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px 24px;
+}
+.section-label {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 12px;
+  margin-bottom: 40px;
+}
+.grid:last-child { margin-bottom: 0; }   /* 最后一组不留底部空白，间距交给 footer 上方 */
+
+/* ── 卡片 ── */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: transform .18s, box-shadow .18s, border-color .18s;
+}
+.card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0,0,0,.09);
+  border-color: var(--accent);
+}
+.card.featured {
+  border-color: var(--featured-border);
+}
+.card.featured::after {
+  content: '纪念存档';
+  position: absolute;
+  top: 11px; right: 13px;
+  font-size: .65rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--featured-border);
+  text-transform: uppercase;
+}
+.card-name { font-weight: 700; font-size: 1rem; }
+.card-at   { font-size: .84rem; color: var(--accent); }
+.card-desc {
+  font-size: .78rem;
+  color: var(--text-dim);
+  line-height: 1.55;
+  margin-top: 4px;
+  flex: 1;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all .2s ease;
+}
+.card-desc.expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+.card-desc:hover { opacity: .8; }
+.card-links {
+  display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;
+}
+.card-links a {
+  font-size: .75rem;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 3px 10px;
+  transition: color .12s, border-color .12s;
+  white-space: nowrap;
+}
+.card-links a:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  text-decoration: none;
+}
+
+/* ── 状态 ── */
+.status {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--text-dim);
+  font-size: .9rem;
+}
+.loading::after {
+  content: '';
+  animation: dots 1.4s infinite;
+}
+@keyframes dots {
+  0%  { content: ''; }
+  33% { content: '.'; }
+  66% { content: '..'; }
+  99% { content: '...'; }
+}
+
+/* ── 底部 ── */
+footer {
+  text-align: center;
+  padding: 18px 20px;
+  font-size: .76rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+footer a { color: var(--text-dim); }
+footer a:hover { color: var(--accent); text-decoration: none; }
+
+@media (max-width: 600px) {
+  .hero { padding: 60px 20px 48px; }
+  .grid { grid-template-columns: 1fr; }
+}
+
+/* ── 预览区：留言 + 时间线 ── */
+.preview { max-width: 1200px; margin: 0 auto 40px; padding: 0 24px; }
+.preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: stretch; }
+.preview-col { display: flex; flex-direction: column; }
+.preview-head { font-weight: 700; font-size: 1.02rem; margin-bottom: 12px; }
+.preview-list { display: flex; flex-direction: column; gap: 10px; flex: 1; }
+.preview-item {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+  padding: 13px 15px; cursor: pointer; transition: transform .15s, box-shadow .15s;
+}
+.pi-head { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.pi-nick { font-weight: 700; font-size: .88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pi-sub { font-size: .75rem; color: var(--text-muted); margin-left: auto; flex-shrink: 0; }
+.pi-text {
+  font-size: .89rem; line-height: 1.5; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.preview-empty { color: var(--text-muted); font-size: .85rem; padding: 8px 2px; }
+.preview-cta {
+  margin-top: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 12px 0; border-radius: 999px; font-size: .92rem; font-weight: 600;
+  transition: transform .15s, box-shadow .15s, background .15s; -webkit-tap-highlight-color: transparent;
+}
+.preview-cta.cta-primary {
+  background: radial-gradient(135% 190% at 50% 40%, var(--accent) 28%, color-mix(in srgb, var(--accent) 60%, #fff) 100%);
+  color: #fff; box-shadow: 0 2px 9px rgba(29,155,240,.2);
+}
+.preview-cta.cta-ghost { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); }
+@media (hover: hover) {
+  .preview-item:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(0,0,0,.08); }
+  .preview-cta.cta-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(29,155,240,.3); }
+  .preview-cta.cta-ghost:hover { transform: translateY(-2px); background: var(--bg-hover); }
+}
+/* 按压反馈：点下时缩一下（放在 hover 之后，点击时覆盖 hover 的位移）*/
+.preview-cta:active { transform: scale(.97); box-shadow: 0 1px 5px rgba(29,155,240,.18); transition-duration: .06s; }
+.preview-item:active { transform: scale(.985); transition-duration: .06s; }
+@media (max-width: 760px) { .preview-grid { grid-template-columns: 1fr; gap: 26px; } }
+
+/* ═══ 头像墙背景（原地轮换·全局队列防重复·限流闪烁）═══ */
+:root{ --wall-size:160px; --wall-gap:60px; --wall-opacity:.70; --wall-speed:250s; }
+@media (max-width:767px){ :root{ --wall-size:105px; --wall-gap:30px; } }
+.wall{position:absolute;inset:0;overflow:hidden;z-index:0;
+  display:flex;justify-content:center;gap:var(--wall-gap);
+  opacity:0;pointer-events:none;
+  -webkit-mask-image:linear-gradient(to bottom,transparent,#000 14%,#000 74%,transparent);
+          mask-image:linear-gradient(to bottom,transparent,#000 14%,#000 74%,transparent);
+  transition:opacity 1.6s ease;}
+.wall.ready{opacity:var(--wall-opacity);}
+.wall.off{opacity:0!important;}
+.wall-col{display:flex;flex-direction:column;align-items:center;gap:var(--wall-gap);flex:none;will-change:transform;
+  animation:wallUp var(--wall-speed) linear infinite;}
+.wall-col.down{animation-name:wallDown;}
+.wall-col:nth-child(3n){animation-duration:calc(var(--wall-speed)*1.35);}
+.wall-col:nth-child(3n+1){animation-duration:calc(var(--wall-speed)*.82);}
+/* 电脑端专属:列垂直错开,增强交错感（手机端不受影响）*/
+@media (min-width:768px){
+  .wall-col:nth-child(2n){margin-top:calc(var(--wall-size) * -0.5);}
+  .wall-col:nth-child(3n+1){margin-top:calc(var(--wall-size) * -0.26);}
+  .wall-col:nth-child(4n){margin-top:calc(var(--wall-size) * -0.72);}
+  .wall-col:nth-child(5n){margin-top:calc(var(--wall-size) * -0.38);}
+}
+@keyframes wallUp{from{transform:translateY(0)}to{transform:translateY(-50%)}}
+@keyframes wallDown{from{transform:translateY(-50%)}to{transform:translateY(0)}}
+.wall-slot{width:var(--wall-size);height:var(--wall-size);border-radius:50%;flex:none;
+  background:var(--bg-hover);overflow:hidden;position:relative;}
+.wall-slot img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  opacity:0;transition:opacity 1.1s ease;}
+.wall-slot img.show{opacity:1;}
+
+.hero{position:relative;overflow:hidden;}
+/* ── hero 头像墙柔和淡出蒙版 ── */
+/* 电脑端:大范围径向,中心文字区淡到接近底色,四周头像清晰,过渡极长无硬边界 */
+.hero::before{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:radial-gradient(52% 53% at 50% 53%,
+    var(--bg) 0%,
+    var(--bg) 24%,
+    color-mix(in srgb,var(--bg) 90%,transparent) 44%,
+    color-mix(in srgb,var(--bg) 60%,transparent) 64%,
+    color-mix(in srgb,var(--bg) 24%,transparent) 84%,
+    transparent 100%);}
+/* 手机端:改纵向淡出(左右无空间),文字所在的中段淡到底色,上下头像露出 */
+@media (max-width:767px){
+  .hero::before{
+    background:linear-gradient(to bottom,
+      transparent 0%,
+      color-mix(in srgb,var(--bg) 40%,transparent) 12%,
+      color-mix(in srgb,var(--bg) 85%,transparent) 24%,
+      var(--bg) 36%,
+      var(--bg) 66%,
+      color-mix(in srgb,var(--bg) 85%,transparent) 78%,
+      color-mix(in srgb,var(--bg) 40%,transparent) 90%,
+      transparent 100%);}
+}
+
+.hero>*:not(.wall){position:relative;z-index:2;}
+.hero-title,.hero-sub,.memorial{user-select:none;-webkit-user-select:none;}
+/* hero 中央径向蒙版:把标题/纪念文字那块托实,四周头像墙自然透出;
+   只作用于 hero 屏内,不影响下方任何区域 */
+
+/* hero 底边再补一道淡出,和下方内容区平顺衔接 */
+.hero::after{content:"";position:absolute;left:0;right:0;bottom:0;height:24%;z-index:1;
+  pointer-events:none;background:linear-gradient(to bottom,transparent,var(--bg) 94%);}
+.card{position:relative;z-index:2;}
+.top-nav,.scroll-hint,.theme-btn,.wall-btn{z-index:99!important;}
+.scroll-hint svg{opacity:.85!important;}
+@media(prefers-reduced-motion:reduce){.wall-col{animation:none}}
+
+</style>
+</head>
+<body>
+
+<nav class="top-nav">
+  <a href="./guestbook.html" title="留言板"><span class="nav-ico">💬</span><span class="nav-label">留言板</span></a>
+</nav>
+<button class="theme-btn wall-btn" id="wall-btn" onclick="toggleWall()" title="头像墙开关">🫧</button>
+<button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="切换主题">🌙</button>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="wall" id="wall-hero"></div>
+  
+  <h1 class="hero-title anim-1">Twitter<span>Archiver</span></h1>
+  <p class="hero-sub anim-2">基于 Wayback Machine 的推特账号永久存档计划</p>
+
+  <div class="memorial anim-3">
+    这个项目最初是为了纪念<br>
+    <a class="name" href="https://github.com/TwitterArchiver/AnIncanescence" target="_blank">@AnIncandescence</a><br>
+    她的账号被封禁，但她永远也不会被遗忘。
+    <span class="quote">
+      她说过，"互联网是现实的避难所"。<br>
+      这里，是那个避难所的避难所。
+    </span>
+    <span class="tagline">烛火熄灭之后，光还在。</span>
+  </div>
+
+  <div class="scroll-hint anim-4">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="6 9 12 15 18 9"/>
+    </svg>
+  </div>
+</section>
+
+<!-- 预览区：留言 + 时间线 -->
+<section class="preview" id="preview">
+  <div class="preview-grid">
+    <div class="preview-col">
+      <div class="preview-head">💬 大家的留言</div>
+      <div id="msg-preview" class="preview-list"><div class="preview-empty">加载中…</div></div>
+      <a class="preview-cta cta-ghost" href="./guestbook.html">💬 查看全部留言</a>
+    </div>
+    <div class="preview-col">
+      <div class="preview-head">🕐 全站时间线</div>
+      <div id="tl-preview" class="preview-list"><div class="preview-empty">加载中…</div></div>
+      <a class="preview-cta cta-primary" href="./search.html">🕐 进入全站时间线</a>
+    </div>
+  </div>
+</section>
+
+<!-- 仓库列表 -->
+<section class="repos">
+  <div id="repo-list">
+    <div class="status loading">正在加载存档列表</div>
+  </div>
+</section>
+
+<footer>
+  <div>
+    <a href="https://github.com/TwitterArchiver" target="_blank">TwitterArchiver</a> ·
+    <a href="https://github.com/sjshb57/IncandescenceArchiver" target="_blank">如何存档你的账号</a> ·
+    <a href="./guestbook.html">留言板</a>
+  </div>
+  <div style="margin-top:6px;font-size:.7rem;opacity:.6;">AGPL-3.0</div>
+</footer>
+
+<script>
+const EXCLUDE  = new Set(['Dispatcher', '.github', 'home']);
+const FEATURED = 'AnIncanescence';
+const ORG      = 'TwitterArchiver';
+
+// 默认亮色，用户切换后记住
+const stored = localStorage.getItem('portal-theme');
+let isDark = stored === 'dark';
+applyTheme(isDark);
+
+function applyTheme(dark) {
+  isDark = dark;
+  document.body.classList.toggle('dark', dark);
+  document.getElementById('theme-btn').textContent = dark ? '☀️' : '🌙';
+  localStorage.setItem('portal-theme', dark ? 'dark' : 'light');
+}
+function toggleTheme() { applyTheme(!isDark); }
+
+const pagesUrl = r => `https://${ORG.toLowerCase()}.github.io/${r}/`;
+const githubUrl = r => `https://github.com/${ORG}/${r}`;
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function makeCard(repo, featured) {
+  const repoName = repo.repo  || repo.name;
+  const dispName = repo.name  || repoName;
+  const username = repo.username || ('@' + repoName);
+  // 一个仓库可能有多个账号：带上 ?a= 指到具体那一个（单账号时不加，保持链接干净）
+  const acct = repo.acct || '';
+  const readUrl = (acct && acct.toLowerCase() !== repoName.toLowerCase())
+    ? `${pagesUrl(repoName)}?a=${encodeURIComponent(acct)}`
+    : pagesUrl(repoName);
+  const d = document.createElement('div');
+  d.className = 'card' + (featured ? ' featured' : '');
+  d.onclick = () => window.open(readUrl, '_blank');
+  d.innerHTML = `
+    <div class="card-name">${esc(dispName)}</div>
+    <div class="card-at">${esc(username)}</div>
+    ${repo.description ? `<div class="card-desc" onclick="event.stopPropagation();this.classList.toggle('expanded')">${esc(repo.description)}</div>` : '<div class="card-desc"></div>'}
+    <div class="card-links">
+      <a href="${readUrl}" target="_blank" onclick="event.stopPropagation()">📖 阅读存档</a>
+      <a href="${githubUrl(repoName)}" target="_blank" onclick="event.stopPropagation()">⚙️ 仓库</a>
+    </div>`;
+  return d;
+}
+
+/* ═══ 头像墙 ═══ */
+const WALL_KEY='portal-wall';
+let _wallPools=[];
+
+class WallPool{
+  constructor(avatars){
+    this.all=avatars.slice();
+    this.queue=this.all.slice(); this._shuffle(this.queue);
+    this.onScreen=new Set();
+  }
+  _shuffle(a){for(let i=a.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;[a[i],a[j]]=[a[j],a[i]];}}
+  next(){
+    for(let t=0;t<this.queue.length+1;t++){
+      if(!this.queue.length){this.queue=this.all.slice();this._shuffle(this.queue);}
+      const u=this.queue.shift();
+      if(!this.onScreen.has(u)){this.onScreen.add(u);return u;}
+      this.queue.push(u);
+    }
+    return this.all[(Math.random()*this.all.length)|0];
+  }
+  release(u){this.onScreen.delete(u);}
+}
+
+/* 全局闪烁调度：任一时刻最多 3 个在换，且换的位置不相邻 */
+const SwapGov={
+  active:new Set(),        // 正在换的 slot
+  max:3,
+  canSwap(slot){
+    if(this.active.size>=this.max) return false;
+    // 不相邻：检查同列上下邻居、以及已激活的是否紧挨
+    for(const a of this.active){
+      if(a._col===slot._col && Math.abs(a._row-slot._row)<=1) return false;
+    }
+    return true;
+  },
+  begin(slot){this.active.add(slot);},
+  end(slot){this.active.delete(slot);}
+};
+
+function makeSlot(pool,col,row){
+  const slot=document.createElement('div');
+  slot.className='wall-slot'; slot._col=col; slot._row=row;
+  let cur=pool.next();
+  const img=document.createElement('img');
+  img.loading='lazy'; img.decoding='async'; img.src=cur;
+  img.onload=()=>img.classList.add('show');
+  img.onerror=()=>{pool.release(cur);cur=pool.next();img.src=cur;};
+  slot.appendChild(img);
+
+  function trySwap(){
+    // 呼吸 1~2 次后尝试换人；受全局限流控制
+    const breaths=1+Math.floor(Math.random()*2);
+    const dur=7+Math.random()*7;             // 每次呼吸 7~14s
+    setTimeout(function attempt(){
+      if(!SwapGov.canSwap(slot)){
+        // 被限流：稍等再试，错开波峰
+        setTimeout(attempt, 1200+Math.random()*2000);
+        return;
+      }
+      SwapGov.begin(slot);
+      img.classList.remove('show');           // 淡出
+      setTimeout(()=>{
+        pool.release(cur);
+        let nx=pool.next();
+        // 防闪成自己/在场：next() 已排除在场，双保险
+        if(nx===cur){pool.release(nx);nx=pool.next();}
+        cur=nx;
+        const pre=new Image();
+        const done=()=>{img.src=cur;img.classList.add('show');
+          setTimeout(()=>SwapGov.end(slot),1100); trySwap();};
+        pre.onload=done;
+        pre.onerror=()=>{pool.release(cur);cur=pool.next();done();};
+        pre.src=cur;
+      },1100);
+    }, breaths*dur*1000);
+  }
+  trySwap();
+  return slot;
+}
+
+function buildWall(el,pool){
+  const cs=getComputedStyle(document.documentElement);
+  const px=parseInt(cs.getPropertyValue('--wall-size'))||140;
+  const gp=parseInt(cs.getPropertyValue('--wall-gap'))||40;
+  const cols=Math.max(4,Math.ceil(window.innerWidth/(px+gp))+1);
+  const rows=Math.ceil(window.innerHeight/(px+gp))+2;
+  el.innerHTML='';
+  const frag=document.createDocumentFragment();
+  for(let c=0;c<cols;c++){
+    const col=document.createElement('div');
+    col.className='wall-col'+(c%2?' down':'');
+    for(let r=0;r<rows*2;r++) col.appendChild(makeSlot(pool,c,r));
+    frag.appendChild(col);
+  }
+  el.appendChild(frag);
+}
+
+function initWall(repos){
+  if(!repos||!repos.length) return;
+  const avatars=repos.map(x=>{const repo=x.repo||x.name;const acct=x.acct||repo;
+    return `${pagesUrl(repo)}accounts/${acct}/wayback_snapshots/avatar/avatar.jpg`;});
+  const hero=document.getElementById('wall-hero');
+  if(hero) buildWall(hero,new WallPool(avatars));
+
+  if(localStorage.getItem(WALL_KEY)==='off'){
+    document.querySelectorAll('.wall').forEach(w=>w.classList.add('off'));
+    document.getElementById('wall-btn')?.classList.add('off');
+  }
+  setTimeout(()=>document.querySelectorAll('.wall').forEach(w=>w.classList.add('ready')),260);
+
+  let rt;window.addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{
+    SwapGov.active.clear();
+    if(hero) buildWall(hero,new WallPool(avatars));
+  },400);});
+}
+
+function setWall(off){
+  document.querySelectorAll('.wall').forEach(w=>w.classList.toggle('off',off));
+  document.getElementById('wall-btn')?.classList.toggle('off',off);
+  localStorage.setItem(WALL_KEY,off?'off':'on');
+}
+function toggleWall(){setWall(!document.querySelector('.wall')?.classList.contains('off'));}
+document.addEventListener('dblclick',e=>{
+  if(e.target.closest('a,button,.card,input,textarea,.top-nav')) return;
+  // 清除双击自动产生的文字选中（否则会选中标题/纪念文字）
+  const sel=window.getSelection&&window.getSelection();
+  if(sel){ sel.removeAllRanges&&sel.removeAllRanges(); }
+  toggleWall();
+});
+
+async function loadRepos() {
+  const container = document.getElementById('repo-list');
+  try {
+    const r = await fetch('./repos.json');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const all = await r.json();
+    initWall(all);
+
+    // featured:多账号仓库下同 repo 有多条,按 acct 精确匹配主账号
+    const isFeatured = r => (r.repo || r.name) === FEATURED
+                          && (r.acct || r.repo || r.name) === 'AnIncandescence';
+    const featured = all.find(isFeatured);
+    const rest = all
+      .filter(r => !EXCLUDE.has(r.repo || r.name) && !isFeatured(r))
+      .sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+
+    container.innerHTML = '';
+
+    const allRepos = [
+      ...(featured ? [featured] : []),
+      ...rest
+    ];
+
+    if (allRepos.length) {
+      const sec = document.createElement('div');
+      sec.innerHTML = `<div class="section-label">全部存档 · ${allRepos.length} 个账号</div>`;
+      const g = document.createElement('div');
+      g.className = 'grid';
+      allRepos.forEach(r => g.appendChild(makeCard(r, r === featured)));
+      sec.appendChild(g);
+      container.appendChild(sec);
+    } else {
+      container.innerHTML = '<div class="status">暂无存档仓库</div>';
+    }
+  } catch(e) {
+    container.innerHTML = `<div class="status">加载失败：${esc(e.message)}<br><small>稍后刷新重试</small></div>`;
+  }
+}
+
+loadRepos();
+
+/* ── 预览区：留言（Waline）+ 时间线（search-index）── */
+// ≤2 全显示；≥3 取 3 条，高概率含热度最高的 2 条，顺序打乱
+function pickPreview(items, weightFn) {
+  if (items.length <= 2) return items.slice();
+  const sorted = [...items].sort((a, b) => weightFn(b) - weightFn(a));
+  const top = sorted.slice(0, 2);
+  const result = [];
+  for (const t of top) if (Math.random() < 0.8) result.push(t);   // 各 80% 概率入选
+  const remain = items.filter(x => !result.includes(x));
+  while (result.length < 3 && remain.length) {
+    result.push(remain.splice(Math.floor(Math.random() * remain.length), 1)[0]);
+  }
+  return result.sort(() => Math.random() - 0.5).slice(0, 3);       // 打乱，避免热门总在前
+}
+
+async function loadMsgPreview() {
+  const box = document.getElementById('msg-preview');
+  try {
+    const r = await fetch('https://waline-twitterarchiver.vercel.app/api/comment?type=recent&count=50',
+                          { headers: { Accept: 'application/json' } });
+    const j = await r.json();
+    const list = (j.data || []).filter(c => {
+      if (c.status === 'spam') return false;
+      const t = (c.orig || c.comment || '').replace(/<[^>]+>/g, '').trim();
+      return t.length >= 6;   // 过滤掉"谢谢！"这类太短的客套，预览更有内容
+    });
+    if (!list.length) { box.innerHTML = '<div class="preview-empty">还没有留言，来留下第一句吧～</div>'; return; }
+    const picked = pickPreview(list, c => c.like || 0);
+    box.innerHTML = picked.map(c => {
+      const text = (c.orig || c.comment || '').replace(/<[^>]+>/g, '').trim();
+      const like = c.like ? `♥ ${c.like}` : '';
+      return `<div class="preview-item" onclick="location.href='./guestbook.html'">
+        <div class="pi-head"><span class="pi-nick">${esc(c.nick || '匿名')}</span><span class="pi-sub">${like}</span></div>
+        <div class="pi-text">${esc(text)}</div></div>`;
+    }).join('');
+  } catch (e) { box.innerHTML = '<div class="preview-empty">留言加载失败</div>'; }
+}
+
+async function loadTlPreview() {
+  const box = document.getElementById('tl-preview');
+  try {
+    const r = await fetch('./preview.json', { cache: 'no-cache' });
+    const idx = await r.json();
+    const accts = idx.accts || [], posts = idx.posts || [];
+    const cand = posts.filter(p => (p[1] || '').trim());
+    if (!cand.length) { box.innerHTML = '<div class="preview-empty">暂无推文</div>'; return; }
+    // 推文偏随机：先随机取一批样本，再从样本里挑热度(回复数)最高的 2 条 + 随机
+    const pool = cand.slice(), sample = [];
+    for (let i = 0; i < Math.min(60, cand.length); i++) {
+      sample.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    }
+    const picked = pickPreview(sample, p => p[3] || 0);
+    box.innerHTML = picked.map(p => {
+      const a = accts[p[0]] || {};
+      const rc = p[3] ? `💬 ${p[3]}` : '';
+      const suf = (p[2] || '').slice(-8);
+      return `<div class="preview-item" onclick="location.href='./search.html?t=${suf}'">
+        <div class="pi-head"><span class="pi-nick">${esc(a.n || a.a || '')}</span><span class="pi-sub">${rc}</span></div>
+        <div class="pi-text">${esc(p[1])}</div></div>`;
+    }).join('');
+  } catch (e) { box.innerHTML = '<div class="preview-empty">推文加载失败</div>'; }
+}
+
+loadMsgPreview();
+loadTlPreview();
+</script>
+</body>
+</html>

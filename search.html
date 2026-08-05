@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+<title>全站时间线 · TwitterArchiver</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" href="icons/favicon.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+:root {
+  --bg:           #000000;
+  --bg-panel:     #000000;
+  --bg-search:    #202327;
+  --bg-hover:     #080808;
+  --bg-active:    #16181c;
+  --border:       #2f3336;
+  --text:         #e7e9ea;
+  --text-dim:     #71767b;
+  --text-muted:   #3e4144;
+  --accent:       #1d9bf0;
+  --accent-hover: #1a8cd8;
+  --scrollbar-thumb: #2f3336;
+}
+body.light {
+  --bg:           #ffffff;
+  --bg-panel:     #f7f9f9;
+  --bg-search:    #eff3f4;
+  --bg-hover:     #f7f9f9;
+  --bg-active:    #e7e7e7;
+  --border:       #eff3f4;
+  --text:         #0f1419;
+  --text-dim:     #536471;
+  --text-muted:   #b0b8c1;
+  --accent:       #1d9bf0;
+  --accent-hover: #1a8cd8;
+  --scrollbar-thumb: #cfd9de;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 15px; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  min-height: 100vh; transition: background .2s, color .2s; overflow-x: hidden;
+}
+a { color: var(--accent); text-decoration: none; }
+
+/* ── 顶栏 ── */
+.top {
+  position: sticky; top: 0; z-index: 100;
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+.top-inner {
+  max-width: 640px; margin: 0 auto; padding: 10px 16px;
+  display: flex; align-items: center; gap: 12px;
+}
+.top-title {
+  font-size: 1.15rem; font-weight: 800; white-space: nowrap;
+  display: flex; align-items: center; gap: 7px;
+}
+.top-title .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.search-wrap { flex: 1; position: relative; }
+.search-input {
+  width: 100%; height: 40px; padding: 0 38px 0 38px;
+  background: var(--bg-search); border: 1px solid transparent; border-radius: 999px;
+  color: var(--text); font-size: 0.95rem; outline: none;
+  transition: border-color .15s, background .15s;
+}
+.search-input:focus { border-color: var(--accent); background: var(--bg); }
+.search-input::placeholder { color: var(--text-dim); }
+.search-icon {
+  position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+  width: 16px; height: 16px; color: var(--text-dim); pointer-events: none;
+}
+.search-clear {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  width: 22px; height: 22px; border: none; border-radius: 50%;
+  background: var(--text-dim); color: var(--bg); cursor: pointer;
+  display: none; align-items: center; justify-content: center; font-size: 13px;
+}
+.search-clear.show { display: flex; }
+.theme-btn {
+  width: 38px; height: 38px; flex-shrink: 0; border: none; border-radius: 50%;
+  background: var(--bg-hover); cursor: pointer; font-size: 17px;
+  display: flex; align-items: center; justify-content: center;
+}
+.icon-btn {
+  width: 38px; height: 38px; flex-shrink: 0; border: none; border-radius: 50%;
+  background: var(--bg-hover); cursor: pointer; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* 日期/范围 面板 */
+.cal-mask {
+  position: fixed; inset: 0; background: rgba(0,0,0,.4); backdrop-filter: blur(2px);
+  z-index: 200; opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+.cal-mask.open { opacity: 1; pointer-events: auto; }
+.cal-panel {
+  position: fixed; top: 0; right: 0; z-index: 201;
+  width: 320px; max-width: 86vw; height: 100%;
+  background: var(--bg); border-left: 1px solid var(--border);
+  transform: translateX(100%); transition: transform .25s cubic-bezier(.16,1,.3,1);
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: -8px 0 30px rgba(0,0,0,.2);
+}
+.cal-panel.open { transform: translateX(0); }
+.cal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.cal-title { font-size: 1.05rem; font-weight: 800; }
+.cal-close {
+  width: 32px; height: 32px; border: none; border-radius: 50%;
+  background: var(--bg-hover); color: var(--text); cursor: pointer; font-size: 15px;
+  display: flex; align-items: center; justify-content: center;
+}
+.cal-cur { display: none; }
+.cal-section-label {
+  padding: 14px 16px 8px; font-size: 0.9rem; font-weight: 700;
+  color: var(--text); letter-spacing: .02em;
+}
+.cal-scope {
+  display: flex; flex-wrap: wrap; gap: 7px; padding: 0 16px 12px;
+  max-height: 140px; overflow-y: auto; overflow-x: hidden;
+}
+.cal-chip {
+  padding: 6px 12px; border-radius: 10px; border: 1px solid var(--border);
+  background: transparent; color: var(--text); cursor: pointer;
+  font-size: 0.88rem; white-space: nowrap;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+}
+.cal-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.cal-tree { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 0 8px 24px; }
+.cal-year {
+  width: 100%; text-align: left; padding: 10px 12px; border: none;
+  background: transparent; color: var(--text); cursor: pointer;
+  font-size: 0.95rem; font-weight: 700; border-radius: 8px;
+  display: flex; align-items: center; gap: 8px;
+}
+.cal-year:hover { background: var(--bg-hover); }
+.cal-year .arr { transition: transform .2s; font-size: 0.8rem; color: var(--text-dim); }
+.cal-year.open .arr { transform: rotate(90deg); }
+.cal-year .cal-y-count { margin-left: auto; font-size: 0.78rem; color: var(--text-dim); font-weight: 400; }
+.cal-months { display: none; padding: 2px 0 6px 14px; }
+.cal-months.open { display: block; }
+.cal-month {
+  width: 100%; text-align: left; padding: 8px 12px; border: none;
+  background: transparent; color: var(--text-dim); cursor: pointer;
+  font-size: 0.9rem; border-radius: 8px; display: flex; align-items: center;
+}
+.cal-month:hover { background: var(--bg-hover); color: var(--text); }
+.cal-month.active { color: var(--accent); font-weight: 700; }
+.cal-month .cal-m-count { margin-left: auto; font-size: 0.75rem; color: var(--text-muted); }
+
+/* ── 时间线 ── */
+.timeline { max-width: 640px; margin: 0 auto; padding-bottom: 60px; }
+/* 滚动条跟随主题（暗色不再是白色） */
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+.tl-status { text-align: center; color: var(--text-dim); padding: 24px; font-size: 0.9rem; }
+
+/* ── 左右侧栏（电脑端），移动端隐藏 ── */
+.col-side { display: none; }
+.top-right { display: flex; align-items: center; gap: 6px; }
+.top-nav-item { display: none; }       /* 移动端隐藏导航链接（只留📅+主题）*/
+.top-title-text { display: none; }     /* 移动端只显示蓝点 + 短标题 */
+.side-box {
+  border: 1px solid var(--border); border-radius: 16px;
+  background: var(--bg); overflow: hidden; display: flex; flex-direction: column;
+}
+.side-box-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px 10px;
+}
+.side-box-title { font-size: 1.05rem; font-weight: 800; }
+.side-stats { padding: 14px 6px 0; color: var(--text-dim); font-size: 0.92rem; line-height: 1.8; }
+.side-stats b { color: var(--text); font-weight: 700; }
+.top-nav-item {
+  align-items: center; padding: 8px 14px; border-radius: 999px;
+  color: var(--text); text-decoration: none; font-size: 0.98rem; font-weight: 600; white-space: nowrap;
+}
+.top-nav-item:hover { background: var(--bg-hover); }
+
+/* 移动端📅面板里的“全部账号/全部时间”重置行 */
+.filter-reset { display: flex; gap: 8px; padding: 12px 16px 4px; }
+.reset-chip {
+  padding: 6px 12px; border-radius: 10px; border: 1px solid var(--border);
+  background: transparent; color: var(--text); cursor: pointer;
+  font-size: 0.86rem; font-weight: 600;
+}
+.filter-reset .reset-chip { flex: 1; padding: 8px 10px; }
+.reset-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* ── 电脑端：顶栏横条 + 三栏（左账号 / 中时间线 / 右日期）── */
+@media (min-width: 1024px) {
+  /* 顶栏横条（吸顶固定，与三栏同宽对齐） */
+  .top { display: block; position: sticky; top: 0; z-index: 100; }
+  .top-inner {
+    max-width: 1500px; margin: 0 auto; padding: 10px 32px;
+    display: flex; align-items: center; justify-content: center; gap: 28px;
+  }
+  .top-title { width: 300px; flex-shrink: 0; font-size: 1.35rem; }   /* 对齐左栏(300) */
+  .top-title-text { display: inline; }
+  .search-wrap { flex: 1 1 720px; max-width: 720px; min-width: 0; }   /* 中：与中栏同宽对齐 */
+  .top-right { width: 300px; flex-shrink: 0; justify-content: flex-start; gap: 8px; } /* 左对齐：组织主页打头对齐右栏(日期)左缘 */
+  .top-nav-item { display: inline-flex; }
+  #calBtn { display: none; }              /* 电脑端不用📅，左右栏常驻 */
+  .cal-mask { display: none !important; }
+  .cal-panel { display: none !important; } /* 电脑端隐藏移动面板 */
+
+  .layout {
+    display: flex; align-items: flex-start; justify-content: center;
+    gap: 28px; max-width: 1500px; margin: 0 auto; padding: 22px 32px 40px;
+    box-sizing: border-box;
+  }
+  .col-side { display: flex; flex-direction: column; flex-shrink: 0; position: sticky; top: 84px; }
+  .col-acct { width: 300px; }
+  .col-date { width: 300px; }
+  .col-side .side-box { max-height: calc(100vh - 104px); }
+  .col-acct .cal-scope { max-height: calc(100vh - 260px); overflow-y: auto; overflow-x: hidden; }
+  .col-date .cal-tree { max-height: calc(100vh - 180px); overflow-y: auto; overflow-x: hidden; }
+  /* 中栏 */
+  .timeline {
+    flex: 1 1 700px; max-width: 720px; min-width: 0; margin: 0;
+    border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+    min-height: 100vh;
+  }
+  /* 中栏卡片放大 */
+  .tl-card { padding: 18px 20px; }
+  .tl-text { font-size: 1.06rem; line-height: 1.6; }
+  .tl-name { font-size: 1.04rem; }
+  .tl-handle, .tl-time { font-size: 0.9rem; }
+  .tl-avatar { width: 46px; height: 46px; }
+  .tl-replies-toggle { font-size: 0.95rem; }
+  /* 限制图片最大宽度 */
+  .tl-images { max-width: 520px; }
+  .tl-images.n1 img { max-height: 480px; }
+  /* 侧栏字号 */
+  .cal-section-label { font-size: 0.95rem; padding: 14px 16px 8px; }
+  .cal-scope { padding: 0 14px 14px; }
+  .cal-chip { font-size: 0.9rem; padding: 7px 12px; }
+  .cal-tree { padding: 0 8px 14px; }
+  .cal-year { font-size: 1rem; padding: 10px 12px; }
+  .cal-month { font-size: 0.95rem; padding: 9px 12px; }
+  .cal-year .cal-y-count, .cal-month .cal-m-count { font-size: 0.84rem; }
+}
+
+.tl-card {
+  border-bottom: 1px solid var(--border);
+  padding: 14px 16px;
+}
+.tl-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.tl-replies-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 8px; margin-left: -4px; padding: 5px 10px;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--accent); font-size: 0.9rem; font-weight: 600;
+  border-radius: 8px;
+}
+.tl-replies-toggle:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+/* 引用折叠头：与「展开回复」同款，但用更轻的底色区分 */
+.tl-quote-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 10px; padding: 5px 12px;
+  font: inherit; font-size: 0.9rem; font-weight: 600;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 0; border-radius: 999px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  .tl-quote-toggle:hover { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+}
+.tl-quote-toggle:active { transform: scale(.97); transition-duration: .06s; }
+.tl-quote-toggle svg { width: 15px; height: 15px; transition: transform .2s; }
+.tl-quote-toggle.open svg { transform: rotate(180deg); }
+.tl-quote-card {
+  margin-top: 8px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: var(--bg-hover);
+}
+.tl-quote-card .tl-reply-av { width: 26px; height: 26px; }
+.tl-replies-toggle svg { width: 15px; height: 15px; transition: transform .2s; }
+.tl-replies-toggle.open svg { transform: rotate(180deg); }
+.tl-replies { margin-top: 6px; }
+.tl-reply {
+  display: flex; gap: 10px; padding: 11px 12px;
+  border-top: 1px solid var(--border);
+}
+.tl-reply-av-col { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
+.tl-reply-av { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; background: var(--bg-hover); }
+.tl-reply-thread-line { width: 2px; flex: 1; min-height: 6px; margin-top: 4px; background: var(--border); border-radius: 2px; }
+.tl-reply:last-child .tl-reply-thread-line { display: none; }
+.tl-reply-body { flex: 1; min-width: 0; padding-bottom: 2px; }
+.tl-reply-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 3px; }
+.tl-reply-name { font-weight: 700; font-size: 0.92rem; color: var(--text); }
+.tl-reply-handle { font-size: 0.82rem; color: var(--text-dim); }
+.tl-reply-badge {
+  font-size: 0.72rem; color: var(--text-dim); background: var(--bg-hover);
+  padding: 1px 7px; border-radius: 6px; font-weight: 600;
+}
+.tl-reply-cross {
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
+  text-decoration: none; transition: background .15s;
+}
+.tl-reply-cross:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.tl-reply-time { font-size: 0.8rem; color: var(--text-dim); }
+.tl-reply-text { font-size: 0.95rem; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.tl-reply .tl-images { margin-top: 8px; }
+/* 被引用的外人条目（每组开头）：上方留间距+淡分隔线，区分各组对话 */
+/* 被引用的外人条目：淡灰下沉背景（照原版 reply-card-virtual）*/
+.tl-reply-virtual { background: color-mix(in srgb, var(--bg-hover) 50%, transparent); }
+.tl-avatar {
+  width: 44px; height: 44px; border-radius: 50%; object-fit: cover;
+  background: var(--bg-hover); flex-shrink: 0;
+}
+.tl-author { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.tl-name { font-weight: 700; font-size: 0.98rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-handle { color: var(--text-dim); font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-time { color: var(--text-dim); font-size: 0.82rem; white-space: nowrap; align-self: flex-start; }
+.tl-text { font-size: 1rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.tl-text mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: inherit; border-radius: 3px; }
+
+/* 图片网格 */
+.tl-images { display: grid; gap: 3px; margin-top: 10px; border-radius: 14px; overflow: hidden; }
+.tl-images img, .tl-images video {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+  background: var(--bg-hover); cursor: zoom-in; min-height: 0;
+}
+/* 视频：完整显示画面（不裁切），且不用放大镜光标 */
+.tl-images video { object-fit: contain; background: #000; cursor: default; }
+.tl-images.n1 video { max-height: 510px; }
+.tl-images.n1 { grid-template-columns: 1fr; }
+.tl-images.n1 img { max-height: 510px; object-fit: cover; }
+.tl-images.n2 { grid-template-columns: 1fr 1fr; aspect-ratio: 16/9; }
+.tl-images.n3 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; aspect-ratio: 16/10; }
+.tl-images.n3 img:first-child { grid-row: 1 / 3; }
+.tl-images.n4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; aspect-ratio: 16/10; }
+.tl-images.n5plus { grid-template-columns: 1fr 1fr 1fr; grid-auto-rows: 1fr; }
+
+/* ── 图片放大 lightbox ── */
+.lightbox {
+  position: fixed; inset: 0; background: rgba(0,0,0,.72); backdrop-filter: blur(8px);
+  display: none; align-items: center; justify-content: center; z-index: 1200;
+  padding: 24px; cursor: zoom-out;
+}
+.lightbox.open { display: flex; }
+.lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
+.lightbox-close {
+  position: fixed; top: 18px; right: 18px; width: 40px; height: 40px;
+  background: rgba(255,255,255,.12); border: none; border-radius: 50%;
+  color: #fff; font-size: 18px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+
+@media (max-width: 600px) {
+  .top-title { font-size: 1.05rem; }
+}
+
+/* 回到顶部 */
+.to-top {
+  position: fixed; right: 16px; bottom: 20px; z-index: 90;
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--accent); color: #fff; border: none; cursor: pointer;
+  font-size: 17px; line-height: 1; box-shadow: 0 3px 10px rgba(0,0,0,.22);
+  display: none; align-items: center; justify-content: center;
+  transition: background .15s, transform .15s, opacity .2s;
+}
+.to-top.show { display: flex; }
+.to-top:hover { background: var(--accent-hover); transform: translateY(-2px); }
+</style>
+</head>
+<body class="light">
+  <!-- 顶栏：电脑横条（品牌+搜索+导航）/ 移动（标题+搜索+📅+主题）-->
+  <div class="top">
+    <div class="top-inner">
+      <div class="top-title"><span class="dot"></span><span class="top-title-text">全站时间线</span></div>
+      <div class="search-wrap">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input class="search-input" id="search" type="text" placeholder="搜索全站推文 / 推文ID" autocomplete="off">
+        <button class="search-clear" id="clear" aria-label="清除">✕</button>
+      </div>
+      <nav class="top-right">
+        <a class="top-nav-item" href="https://twitterarchiver.github.io/home/">🏠 组织主页</a>
+        <a class="top-nav-item" href="https://twitterarchiver.github.io/home/guestbook.html">💬 留言板</a>
+        <button class="icon-btn" id="calBtn" aria-label="筛选">📅</button>
+        <button class="theme-btn" id="theme" aria-label="切换主题">☀️</button>
+      </nav>
+    </div>
+  </div>
+
+  <div class="cal-mask" id="calMask"></div>
+
+  <!-- 三栏：左账号 / 中时间线 / 右日期 -->
+  <div class="layout">
+    <aside class="col-side col-acct">
+      <div class="side-box">
+        <div class="side-box-head">
+          <span class="side-box-title">账号</span>
+          <button class="reset-chip active" id="resetAcct">全部</button>
+        </div>
+        <div class="cal-scope" id="calScope"></div>
+      </div>
+      <div class="side-stats" id="infoStats"></div>
+    </aside>
+
+    <main class="timeline" id="timeline"></main>
+
+    <aside class="col-side col-date">
+      <div class="side-box">
+        <div class="side-box-head">
+          <span class="side-box-title">日期</span>
+          <button class="reset-chip active" id="resetTime">全部</button>
+        </div>
+        <div class="cal-tree" id="calTree"></div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- 移动端 📅 面板：账号 + 日期 -->
+  <aside class="cal-panel" id="calPanel">
+    <div class="cal-head">
+      <span class="cal-title">筛选</span>
+      <button class="cal-close" id="calClose" aria-label="关闭">✕</button>
+    </div>
+    <div class="filter-reset">
+      <button class="reset-chip active" id="resetAcctM">全部账号</button>
+      <button class="reset-chip active" id="resetTimeM">全部时间</button>
+    </div>
+    <div class="cal-section-label">账号</div>
+    <div class="cal-scope" id="calScopeM"></div>
+    <div class="cal-section-label">日期</div>
+    <div class="cal-tree" id="calTreeM"></div>
+  </aside>
+
+  <div class="tl-status" id="status">加载中…</div>
+
+  <div class="lightbox" id="lightbox"></div>
+  <button class="to-top" id="toTop" aria-label="回到顶部">↑</button>
+
+<script>
+const ORG_BASE = 'https://twitterarchiver.github.io';  // 存档仓库都在这（自定义域名只绑本页）
+const PAGE = 20;
+
+let DATA = { accts: [], posts: [] };
+let view = [];        // 当前展示的 posts（全部 或 搜索结果）
+let rendered = 0;     // 已渲染条数
+let curKw = '';       // 当前搜索词（用于高亮）
+
+const $ = id => document.getElementById(id);
+
+/* ── 工具 ── */
+function esc(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escRe(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
+
+function fmtTime(ts){
+  const d = new Date(ts);
+  if (isNaN(d)) return '';
+  const now = new Date();
+  const diff = (now - d) / 1000;
+  if (diff < 60) return '刚刚';
+  if (diff < 3600) return Math.floor(diff/60) + '分钟前';
+  if (diff < 86400) return Math.floor(diff/3600) + '小时前';
+  if (diff < 86400*7) return Math.floor(diff/86400) + '天前';
+  const pad = n => String(n).padStart(2,'0');
+  const y = d.getFullYear(), mo = pad(d.getMonth()+1), da = pad(d.getDate());
+  return (y === now.getFullYear()) ? `${mo}-${da}` : `${y}-${mo}-${da}`;
+}
+
+// 清掉正文末尾的 t.co 图片短链（图片单独用网格展示，短链冗余）
+function cleanText(t){
+  return (t||'').replace(/\s*https?:\/\/t\.co\/\S+\s*$/i, '').trim();
+}
+
+function acct(p){ return DATA.accts[p[0]] || {}; }
+function imgUrl(p, name){ const a = acct(p); return `${ORG_BASE}/${a.r}/accounts/${a.a}/wayback_snapshots/image/${name}`; }
+/* 媒体分流：视频走 video/ 目录，图片走 image/ */
+function isVideoName(n){ return /\.(mp4|webm|mov|m4v)$/i.test(n || ''); }
+/* Twitter 的 GIF(animated_gif) 存成 mp4，URL 段是 tweet_video；普通视频是 amplify_video/ext_tw_video */
+function isGifName(n){ return /tweet_video/i.test(n || ''); }
+/* 视频标签：GIF 自动循环静音播放(还原推特体验)，普通视频给控件 */
+function videoTag(u){
+  return isGifName(u)
+    ? `<video src="${esc(u)}" autoplay loop muted playsinline preload="metadata" onerror="this.remove()"></video>`
+    : `<video src="${esc(u)}" controls preload="metadata" playsinline onerror="this.remove()"></video>`;
+}
+function mediaUrl(p, name){
+  const a = acct(p);
+  const dir = isVideoName(name) ? 'video' : 'image';
+  return `${ORG_BASE}/${a.r}/accounts/${a.a}/wayback_snapshots/${dir}/${name}`;
+}
+function avatarUrl(p){ const a = acct(p); return a.av ? `${ORG_BASE}/${a.r}/accounts/${a.a}/wayback_snapshots/avatar/${a.av}` : ''; }
+function readerUrl(p){ const a = acct(p); const tid = p[2] || ''; return `${ORG_BASE}/${a.r}/?t=${tid.slice(-8)}`; }
+
+function gridClass(n){ return n===1?'n1':n===2?'n2':n===3?'n3':n===4?'n4':'n5plus'; }
+
+/* ── 卡片渲染 ── */
+function cardHtml(p, idx){
+  const a = acct(p);
+  const text = cleanText(p[1]);
+  const imgs = p[4] || [];
+  let textHtml = esc(text);
+  if (curKw) textHtml = textHtml.replace(new RegExp(escRe(curKw),'gi'), m=>`<mark>${m}</mark>`);
+  textHtml = textHtml.replace(/\n/g, '<br>');
+
+  const av = avatarUrl(p);
+  const avHtml = av ? `<img class="tl-avatar" src="${esc(av)}" loading="lazy" onerror="this.style.visibility='hidden'">` : `<div class="tl-avatar"></div>`;
+
+  let imgsHtml = '';
+  if (imgs.length) {
+    imgsHtml = `<div class="tl-images ${gridClass(imgs.length)}">` +
+      imgs.map(name => {
+        const u = mediaUrl(p, name);
+        return isVideoName(name)
+          ? videoTag(u)
+          : `<img src="${esc(u)}" loading="lazy" data-full="${esc(u)}" onerror="this.remove()">`;
+      }).join('') +
+      `</div>`;
+  }
+
+  return `<article class="tl-card" data-idx="${idx}">
+    <div class="tl-head">
+      ${avHtml}
+      <div class="tl-author">
+        <span class="tl-name">${esc(a.n || a.a || '')}</span>
+        <span class="tl-handle">${esc(a.u || '')}</span>
+      </div>
+      <span class="tl-time">${fmtTime(p[3])}</span>
+    </div>
+    ${textHtml ? `<div class="tl-text">${textHtml}</div>` : ''}
+    ${imgsHtml}
+    ${p[6] ? `<button class="tl-quote-toggle" data-idx="${idx}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
+        引用
+      </button>
+      <div class="tl-quote"></div>` : ''}
+    ${(p[5] > 0) ? `<button class="tl-replies-toggle" data-idx="${idx}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
+        展开回复 <span class="tl-rc">${p[5]}</span>
+      </button>
+      <div class="tl-replies"></div>` : ''}
+  </article>`;
+}
+
+/* ── 无限滚动 ── */
+function renderMore(){
+  const tl = $('timeline');
+  const slice = view.slice(rendered, rendered + PAGE);
+  if (!slice.length) return;
+  const html = slice.map((p,i) => cardHtml(p, rendered + i)).join('');
+  tl.insertAdjacentHTML('beforeend', html);
+  rendered += slice.length;
+  updateStatus();
+}
+function resetTimeline(){
+  $('timeline').innerHTML = '';
+  rendered = 0;
+  renderMore();
+}
+function updateStatus(){
+  const s = $('status');
+  if (!view.length) { s.textContent = curKw ? `没有匹配「${curKw}」的推文` : '暂无内容'; return; }
+  if (rendered >= view.length) s.textContent = `— 已到底 · 共 ${view.length} 条 —`;
+  else s.textContent = '下拉加载更多…';
+}
+
+function onScroll(){
+  if (rendered >= view.length) return;
+  const nearBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 800;
+  if (nearBottom) renderMore();
+}
+
+/* ── 搜索 ── */
+function doSearch(kw){
+  curKw = kw.trim();
+  const trimmed = curKw;
+  const tParam = trimmed.match(/[?&]?t=(\d+)/);     // 定位码 / 完整定位链接
+  const linkMatch = trimmed.match(/status\/(\d+)/); // 推特链接
+  const pureId = /^\d{6,}$/.test(trimmed);          // 长数字 → tweetID
+
+  // 精确定位类（推文ID/链接/定位码）：全局查找，忽略账号/日期筛选
+  if (tParam || linkMatch || pureId) {
+    if (tParam) { curKw=''; const suf=tParam[1]; view = DATA.posts.filter(p => (p[2]||'').endsWith(suf)); }
+    else if (linkMatch) { curKw=''; const id=linkMatch[1]; view = DATA.posts.filter(p => p[2] === id); }
+    else {
+      view = DATA.posts.filter(p => p[2] === trimmed || (p[2]||'').includes(trimmed));
+      if (!view.length) { const kl=trimmed.toLowerCase(); view = DATA.posts.filter(p => (p[1]||'').toLowerCase().includes(kl)); }
+      else curKw = '';
+    }
+    resetTimeline(); window.scrollTo(0,0); return;
+  }
+
+  // 普通关键词：叠加当前账号/日期筛选
+  applyFilters();
+}
+
+/* ── 图片放大 ── */
+function openLightbox(src){
+  const box = $('lightbox');
+  box.innerHTML = `<img src="${esc(src)}" alt=""><button class="lightbox-close" aria-label="关闭">✕</button>`;
+  box.classList.add('open');
+  history.pushState({ ov: 'lightbox' }, '');
+}
+function closeLightbox(fromPop){
+  const box = $('lightbox');
+  if (!box.classList.contains('open')) return;
+  box.classList.remove('open');
+  if (!fromPop) history.back();   // 主动关闭时消费掉历史状态
+}
+
+/* ── 展开/收起回复（就地加载该账号 json，渲染回复链）── */
+const acctCache = {};   // 缓存账号 index.json
+
+async function loadAcctIndex(repo, account){
+  const key = repo + '/' + account;
+  if (acctCache[key]) return acctCache[key];
+  const url = `${ORG_BASE}/${repo}/accounts/${account}/wayback_snapshots/index.json`;
+  const res = await fetch(url, { cache: 'force-cache' });
+  const data = await res.json();
+  acctCache[key] = data;
+  return data;
+}
+
+// 跨账号回复索引：{ 对话根id: [[回复者账号编号, 回复tweetid, 文本, 时间, reply_to_id]] }
+let crossReplies = null;
+async function loadCrossReplies(){
+  if (crossReplies !== null) return crossReplies;
+  try {
+    const res = await fetch('cross-replies.json', { cache: 'no-cache' });
+    crossReplies = res.ok ? await res.json() : {};
+  } catch(e) { crossReplies = {}; }
+  return crossReplies;
+}
+// 把跨账号回复 [ai, tweetid, 文本, 时间, reply_to_id] 构造成可渲染的回复卡片对象
+function buildCrossRep(cr){
+  const ra = DATA.accts[cr[0]] || {};
+  const rbase = `${ORG_BASE}/${ra.r}/accounts/${ra.a}/wayback_snapshots/`;
+  return {
+    tweet_id: cr[1], text: cr[2], timestamp: cr[3], reply_to_id: cr[4] || '',
+    author_name: ra.n || ra.a || '', author_username: ra.u || '',
+    is_reply: true, is_virtual: false,
+    _cross: {
+      avUrl: ra.av ? rbase + 'avatar/' + ra.av : '',
+      handle: (ra.u || '').replace(/^@/,''),
+      jump: `${ORG_BASE}/${ra.r}/?t=${(cr[1] || '').slice(-8)}`,
+    }
+  };
+}
+function dImg(repo, account, rel){ const n=(rel||'').split('/').pop(); return `${ORG_BASE}/${repo}/accounts/${account}/wayback_snapshots/image/${n}`; }
+function dAva(repo, account, rel){ const n=(rel||'').split('/').pop(); return n?`${ORG_BASE}/${repo}/accounts/${account}/wayback_snapshots/avatar/${n}`:''; }
+
+/* ── 渲染单条回复卡片（照阅读器：本人回复 + 被回复的外人虚拟条目）── */
+function renderReplyCard(rep, assetBase, ownerUsername){
+  const name = esc(rep.author_name || '');
+  const username = esc(rep.author_username || '');
+  const text = cleanText(rep.body_text || rep.text || '');
+  const textHtml = esc(text).replace(/\n/g,'<br>');
+  const repUname = (rep.author_username || '').replace(/^@/,'').toLowerCase();
+  const isOwner = ownerUsername && repUname === ownerUsername;
+
+  // 头像：跨账号回复用回复者自己仓库的头像；否则本地 ../avatar/ 拼 assetBase
+  let av = rep.author_avatar || '', avUrl = '';
+  if (rep._cross) avUrl = rep._cross.avUrl;
+  else if (av.startsWith('../')) avUrl = assetBase + av.slice(3);
+  else if (av.startsWith('http')) avUrl = av;
+  else if (av) avUrl = assetBase + 'avatar/' + av.split('/').pop();
+  const avHtml = avUrl
+    ? `<img class="tl-reply-av" src="${esc(avUrl)}" loading="lazy" onerror="this.style.visibility='hidden'">`
+    : `<div class="tl-reply-av"></div>`;
+
+  // 图片：仅当 media_keys 有值（=本条自己的媒体；空则图属于被引用推文）
+  const hasOwnMedia = rep.media_keys && rep.media_keys.length > 0;
+  const imgs = (hasOwnMedia ? ((rep.wanted_images || []).concat(rep.wanted_videos || [])) : []).map(x => x.split('/').pop());
+  let imgsHtml = '';
+  if (imgs.length) {
+    imgsHtml = `<div class="tl-images ${gridClass(imgs.length)}">` +
+      imgs.map(n => {
+        const u = assetBase + (isVideoName(n) ? 'video/' : 'image/') + n;
+        return isVideoName(n)
+          ? videoTag(u)
+          : `<img src="${esc(u)}" loading="lazy" data-full="${esc(u)}" onerror="this.remove()">`;
+      }).join('') +
+      `</div>`;
+  }
+
+  // 跨账号回复 → 「↗ 来自 @xxx」可点击；被回复/引用对象 → 「引用」；本人回复无标签
+  let badge, unameHtml;
+  if (rep._cross) {
+    badge = `<a class="tl-reply-badge tl-reply-cross" href="${esc(rep._cross.jump)}" target="_blank" rel="noopener" title="跳到该账号的存档">↗ 来自 @${esc(rep._cross.handle)}</a>`;
+    unameHtml = `<span class="tl-reply-handle">${username}</span>`;
+  } else if (!isOwner) {
+    badge = `<span class="tl-reply-badge">引用</span>`;
+    unameHtml = `<span class="tl-reply-handle">${username}</span>`;
+  } else {
+    badge = ''; unameHtml = '';
+  }
+  return `<div class="tl-reply${rep.is_virtual?' tl-reply-virtual':''}">
+    <div class="tl-reply-av-col">
+      ${avHtml}
+      <div class="tl-reply-thread-line"></div>
+    </div>
+    <div class="tl-reply-body">
+      <div class="tl-reply-meta">
+        <span class="tl-reply-name">${name}</span>
+        ${unameHtml}
+        ${badge}
+        <span class="tl-reply-time">${fmtTime(rep.timestamp)}</span>
+      </div>
+      ${textHtml?`<div class="tl-reply-text">${textHtml}</div>`:''}
+      ${imgsHtml}
+    </div>
+  </div>`;
+}
+
+function setToggleLabel(btn, open, rc){
+  btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg> ${open?'收起回复':'展开回复'} <span class="tl-rc">${rc}</span>`;
+}
+
+/* ── 引用/转推原推：折叠头 + 懒加载内容（与阅读器表现一致）── */
+async function toggleQuote(btn){
+  const card = btn.closest('.tl-card');
+  const box  = card.querySelector('.tl-quote');
+  const idx  = parseInt(btn.dataset.idx, 10);
+  const p    = view[idx];
+  if (!p) return;
+
+  if (btn.classList.contains('open')) {
+    btn.classList.remove('open');
+    box.innerHTML = '';
+    return;
+  }
+  btn.classList.add('open');
+  box.innerHTML = `<div class="tl-status" style="padding:10px">加载引用…</div>`;
+
+  try {
+    const a = acct(p);
+    const data = await loadAcctIndex(a.r, a.a);
+    const it = data.find(x => x.tweet_id === p[2]);
+    const emb = it && it.embedded;
+    if (!emb || (!emb.body_text && !emb.author_username)) {
+      box.innerHTML = `<div class="tl-status" style="padding:10px">引用内容缺失</div>`;
+      return;
+    }
+    const assetBase = `${ORG_BASE}/${a.r}/accounts/${a.a}/wayback_snapshots/`;
+    let av = emb.author_avatar || '', avUrl = '';
+    if (av.startsWith('../')) avUrl = assetBase + av.slice(3);
+    else if (av.startsWith('http')) avUrl = av;
+    else if (av) avUrl = assetBase + 'avatar/' + av.split('/').pop();
+    const avHtml = avUrl
+      ? `<img class="tl-reply-av" src="${esc(avUrl)}" loading="lazy" onerror="this.style.visibility='hidden'">`
+      : `<div class="tl-reply-av"></div>`;
+    const txt = esc(cleanText(emb.body_text || '')).replace(/\n/g, '<br>');
+    const uname = (emb.author_username || '').replace(/^@/, '');
+    const jump = uname ? `${ORG_BASE}/${a.r}/?t=${(emb.tweet_id||'').slice(-8)}` : '';
+    box.innerHTML = `<div class="tl-quote-card">
+      <div class="tl-reply-meta">
+        ${avHtml}
+        <span class="tl-reply-name">${esc(emb.author_name || '')}</span>
+        ${uname ? `<span class="tl-reply-handle">@${esc(uname)}</span>` : ''}
+        <span class="tl-reply-time">${fmtTime(emb.timestamp)}</span>
+      </div>
+      ${txt ? `<div class="tl-reply-text">${txt}</div>` : ''}
+    </div>`;
+  } catch (e) {
+    box.innerHTML = `<div class="tl-status" style="padding:10px">引用加载失败</div>`;
+  }
+}
+
+async function toggleReplies(btn){
+  const card = btn.closest('.tl-card');
+  const box = card.querySelector('.tl-replies');
+  const idx = parseInt(btn.dataset.idx, 10);
+  const p = view[idx];
+  if (!p) return;
+  const rc = p[5];
+
+  // 已展开 → 收起
+  if (btn.classList.contains('open')) {
+    btn.classList.remove('open');
+    box.innerHTML = '';
+    setToggleLabel(btn, false, rc);
+    return;
+  }
+
+  const a = acct(p), tid = p[2];
+  btn.classList.add('open');
+  setToggleLabel(btn, true, rc);
+  box.innerHTML = `<div class="tl-status" style="padding:10px">加载回复…</div>`;
+
+  try {
+    const data = await loadAcctIndex(a.r, a.a);
+    const cross = await loadCrossReplies();
+    // idIndex 含所有条目（含虚拟外人条目）；replyMap 只收真实的本人回复（按 conversation_id）
+    const idIndex = {}, replyMap = {};
+    for (const it of data) {
+      if (it.tweet_id) idIndex[it.tweet_id] = it;
+      if (it.is_virtual) continue;
+      if (it.is_reply && it.conversation_id) (replyMap[it.conversation_id] = replyMap[it.conversation_id] || []).push(it);
+    }
+    const ownerReplies = (replyMap[tid] || []).slice()
+      .sort((x,y) => (x.timestamp||'').localeCompare(y.timestamp||''));
+    // 组装链：本账号回复链 + 跨账号回复，按时间混排
+    // 每项 {rep, ts, seq}；引用对象 seq=0（紧贴在它配对的本人回复前），回复 seq=1
+    const cardList = [], seen = new Set([tid]);
+    for (const rep of ownerReplies) {
+      const ts = rep.timestamp || '';
+      const pid = rep.reply_to_id;
+      if (pid && pid !== tid && !seen.has(pid)) {
+        const par = idIndex[pid];
+        if (par) { cardList.push({rep: par, ts, seq: 0}); seen.add(pid); }
+      }
+      if (!seen.has(rep.tweet_id)) { cardList.push({rep, ts, seq: 1}); seen.add(rep.tweet_id); }
+    }
+    // 跨账号回复（别的站内账号回复了这条主推文）
+    for (const cr of (cross[tid] || [])) {
+      if (seen.has(cr[1])) continue;
+      cardList.push({rep: buildCrossRep(cr), ts: cr[3] || '', seq: 1});
+      seen.add(cr[1]);
+    }
+    cardList.sort((x,y) => (x.ts||'').localeCompare(y.ts||'') || x.seq - y.seq);
+    const chainItems = cardList.map(c => c.rep);
+    const assetBase = `${ORG_BASE}/${a.r}/accounts/${a.a}/wayback_snapshots/`;
+    const ownerUsername = (a.u || '').replace(/^@/,'').toLowerCase();
+    box.innerHTML = chainItems.length
+      ? chainItems.map(rep => renderReplyCard(rep, assetBase, ownerUsername)).join('')
+      : `<div class="tl-status" style="padding:10px">没有回复</div>`;
+  } catch(e) {
+    box.innerHTML = `<div class="tl-status" style="padding:10px">回复加载失败</div>`;
+  }
+}
+
+/* ── 事件：图片放大 / 展开回复 ── */
+function setupClicks(){
+  const tl = $('timeline');
+  tl.addEventListener('click', e => {
+    // 点视频（播放/进度条）不触发卡片跳转或灯箱
+    if (e.target.closest('.tl-images video')) { e.stopPropagation(); return; }
+    const img = e.target.closest('.tl-images img');
+    if (img) { const full = img.getAttribute('data-full'); if (full) openLightbox(full); return; }
+    const qtog = e.target.closest('.tl-quote-toggle');
+    if (qtog) { toggleQuote(qtog); return; }
+    const tog = e.target.closest('.tl-replies-toggle');
+    if (tog) { toggleReplies(tog); return; }
+  });
+
+  $('lightbox').addEventListener('click', () => closeLightbox());
+
+  // 返回键：优先关闭打开的图片放大
+  window.addEventListener('popstate', () => {
+    if ($('lightbox').classList.contains('open')) { closeLightbox(true); return; }
+  });
+}
+
+/* ── 日期/范围 面板 ── */
+let filterAcct = null;   // null=全部账号，否则账号编号
+let filterYM = null;     // null=全部时间，否则 "2026-05"
+
+function applyFilters(){
+  let v = DATA.posts;
+  if (filterAcct !== null) v = v.filter(p => p[0] === filterAcct);
+  if (filterYM) {
+    v = v.filter(p => {
+      const d = new Date(p[3]); if (isNaN(d)) return false;
+      const ym = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+      return ym === filterYM;
+    });
+  }
+  // 搜索词叠加（若有）
+  if (curKw) {
+    const kl = curKw.toLowerCase();
+    v = v.filter(p => (p[1]||'').toLowerCase().includes(kl));
+  }
+  view = v;
+  resetTimeline();
+  window.scrollTo(0, 0);
+}
+
+function buildDateTree(){
+  const tree = {};   // year -> { month -> count }
+  for (const p of DATA.posts) {
+    if (filterAcct !== null && p[0] !== filterAcct) continue;
+    const d = new Date(p[3]); if (isNaN(d)) continue;
+    const y = d.getFullYear(), m = d.getMonth()+1;
+    (tree[y] = tree[y] || {});
+    tree[y][m] = (tree[y][m]||0) + 1;
+  }
+  return tree;
+}
+
+function renderStats(){
+  const el = $('infoStats'); if (!el) return;
+  el.innerHTML = `收录 <b>${DATA.accts.length}</b> 个账号<br>共 <b>${(DATA.posts.length || 0).toLocaleString()}</b> 条主推文`;
+}
+function renderReset(){
+  [['resetAcct','resetAcctM', filterAcct === null], ['resetTime','resetTimeM', filterYM === null]]
+    .forEach(([a,b,act]) => [a,b].forEach(id => { const el=$(id); if (el) el.classList.toggle('active', act); }));
+}
+
+function renderCalScope(){
+  // 炽烈已极(AnIncandescence) 与 Pale Fire(TauCeti_10700) 置顶，其余保持原序
+  const pinned = ['anincandescence', 'tauceti_10700'];
+  const rank = i => { const p = pinned.indexOf((DATA.accts[i].a || '').toLowerCase()); return p === -1 ? 999 : p; };
+  const order = DATA.accts.map((_, i) => i).sort((x, y) => {
+    const rx = rank(x), ry = rank(y);
+    return rx !== ry ? rx - ry : x - y;
+  });
+  const html = order.map(i => {
+    const a = DATA.accts[i];
+    return `<button class="cal-chip ${filterAcct===i?'active':''}" data-acct="${i}">${esc(a.n || a.a)}</button>`;
+  }).join('');
+  ['calScope','calScopeM'].forEach(id => { const el=$(id); if (el) el.innerHTML = html; });
+}
+
+function renderCalTree(){
+  const tree = buildDateTree();
+  const years = Object.keys(tree).map(Number).sort((a,b)=>b-a);
+  let html = '';
+  for (const y of years) {
+    const months = Object.keys(tree[y]).map(Number).sort((a,b)=>b-a);
+    const yc = months.reduce((s,m)=>s+tree[y][m], 0);
+    const isOpen = filterYM && filterYM.startsWith(y + '-');
+    html += `<button class="cal-year ${isOpen?'open':''}" data-year="${y}"><span class="arr">▶</span>${y} 年<span class="cal-y-count">${yc}</span></button>`;
+    html += `<div class="cal-months ${isOpen?'open':''}" data-year-months="${y}">`;
+    for (const m of months) {
+      const ym = y + '-' + String(m).padStart(2,'0');
+      html += `<button class="cal-month ${filterYM===ym?'active':''}" data-ym="${ym}">${m} 月<span class="cal-m-count">${tree[y][m]}</span></button>`;
+    }
+    html += `</div>`;
+  }
+  ['calTree','calTreeM'].forEach(id => { const el=$(id); if (el) el.innerHTML = html; });
+}
+
+function refreshFilters(){ renderReset(); renderCalScope(); renderCalTree(); }
+
+function openCal(){
+  refreshFilters();
+  $('calMask').classList.add('open');
+  $('calPanel').classList.add('open');
+}
+function closeCal(){
+  $('calMask').classList.remove('open');
+  $('calPanel').classList.remove('open');
+}
+
+function setupCal(){
+  const cb=$('calBtn'); if (cb) cb.addEventListener('click', openCal);
+  const cc=$('calClose'); if (cc) cc.addEventListener('click', closeCal);
+  const cm=$('calMask'); if (cm) cm.addEventListener('click', closeCal);
+
+  ['resetAcct','resetAcctM'].forEach(id => { const el=$(id); if (el) el.addEventListener('click', () => { filterAcct=null; applyFilters(); refreshFilters(); }); });
+  ['resetTime','resetTimeM'].forEach(id => { const el=$(id); if (el) el.addEventListener('click', () => { filterYM=null; applyFilters(); refreshFilters(); }); });
+
+  ['calScope','calScopeM'].forEach(id => {
+    const el=$(id); if (!el) return;
+    el.addEventListener('click', e => {
+      const chip = e.target.closest('.cal-chip'); if (!chip) return;
+      filterAcct = parseInt(chip.dataset.acct, 10);
+      filterYM = null;   // 切账号重置月份
+      applyFilters(); refreshFilters();
+    });
+  });
+
+  ['calTree','calTreeM'].forEach(id => {
+    const el=$(id); if (!el) return;
+    el.addEventListener('click', e => {
+      const yb = e.target.closest('.cal-year');
+      if (yb) {
+        yb.classList.toggle('open');
+        const mm = el.querySelector(`.cal-months[data-year-months="${yb.dataset.year}"]`);
+        if (mm) mm.classList.toggle('open');
+        return;
+      }
+      const mb = e.target.closest('.cal-month');
+      if (mb) { filterYM = mb.dataset.ym; applyFilters(); refreshFilters(); closeCal(); }
+    });
+  });
+}
+
+/* ── 主题 ── */
+function applyTheme(light){
+  document.body.classList.toggle('light', light);
+  const t1 = $('theme'), t2 = $('theme2');
+  if (t1) t1.textContent = light ? '☀️' : '🌙';
+  if (t2) t2.textContent = light ? '☀️ 浅色模式' : '🌙 深色模式';
+  localStorage.setItem('tl-theme', light ? 'light' : 'dark');
+}
+
+/* ── 搜索框（顶栏 + 右栏两个入口，同步）── */
+function setupSearch(){
+  const pairs = [['search','clear'],['search2','clear2']]
+    .map(([i,c]) => [$(i), $(c)]).filter(([i]) => i);
+  let timer;
+  function run(kw){
+    pairs.forEach(([i,c]) => { if (i.value !== kw) i.value = kw; if (c) c.classList.toggle('show', kw.length > 0); });
+    clearTimeout(timer);
+    timer = setTimeout(() => { doSearch(kw); window.scrollTo(0,0); }, 180);
+  }
+  pairs.forEach(([inp, clr]) => {
+    inp.addEventListener('input', () => run(inp.value));
+    if (clr) clr.addEventListener('click', () => { run(''); inp.focus(); });
+  });
+}
+
+/* ── 启动 ── */
+async function init(){
+  const th = localStorage.getItem('tl-theme');
+  applyTheme(th !== 'dark');  // 默认亮色
+
+  $('theme').addEventListener('click', () => applyTheme(!document.body.classList.contains('light')));
+  const t2 = $('theme2'); if (t2) t2.addEventListener('click', () => applyTheme(!document.body.classList.contains('light')));
+  setupSearch();
+  setupClicks();
+  setupCal();
+  window.addEventListener('scroll', onScroll, { passive: true });
+
+  // 回到顶部
+  const toTop = $('toTop');
+  window.addEventListener('scroll', () => {
+    toTop.classList.toggle('show', window.scrollY > 600);
+  }, { passive: true });
+  toTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+  try {
+    const res = await fetch('search-index.json', { cache: 'no-cache' });
+    DATA = await res.json();
+  } catch(e) {
+    $('status').textContent = '索引加载失败，请稍后重试';
+    return;
+  }
+  view = DATA.posts || [];
+  // 稳健排序：用时间戳数值倒序（兜底各账号 ts 字符串格式不一导致的乱序）
+  view = view.filter(p => p && p[3]);
+  view.sort((a, b) => (Date.parse(b[3]) || 0) - (Date.parse(a[3]) || 0));
+  DATA.posts = view;
+  resetTimeline();
+  // 渲染左栏筛选（电脑常驻/移动面板）+ 右栏统计
+  renderStats(); refreshFilters();
+}
+init();
+</script>
+</body>
+</html>

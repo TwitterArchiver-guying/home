@@ -1,0 +1,234 @@
+name: 生成全站搜索索引 search-index.json
+
+on:
+  schedule:
+    # 每天 UTC 04:00（在 dispatch 02:00 那批更新之后）
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: 检出 home 仓库
+        uses: actions/checkout@v7
+
+      - name: 汇总各仓库主推文，生成 search-index.json
+        run: |
+          cat > /tmp/build.py << 'PYEOF'
+          import json, subprocess, urllib.request, os, re
+          from datetime import datetime
+
+          ORG = "TwitterArchiver-guying"
+
+          def parse_ts(t):
+              """统一解析两种时间格式为可比较的时间戳（秒）。
+                 ISO: 2026-07-16T00:22:21.000Z
+                 老推特: Wed Sep 09 13:44:34 +0000 2020
+                 解析失败返回 0（排到最后）。"""
+              if not t:
+                  return 0.0
+              try:
+                  if "T" in t:
+                      return datetime.strptime(
+                          t.split(".")[0].replace("Z",""), "%Y-%m-%dT%H:%M:%S"
+                      ).timestamp()
+                  return datetime.strptime(t, "%a %b %d %H:%M:%S %z %Y").timestamp()
+              except Exception:
+                  return 0.0
+          EXCLUDE = {"Dispatcher", ".github", "home"}
+
+          def sh(args):
+              return subprocess.check_output(args).decode()
+
+          _RT_PREFIX = re.compile(r'^\s*(RT @[^:：]+[:：]\s*)')
+          def resolve_text(p):
+              """正文优先 body_text；若是被截断的转推(RT…)且带 embedded 原推全文，
+                 则用「RT @原作者: 嵌入全文」重建，补回被推特截掉的内容。"""
+              t = p.get("body_text","") or p.get("text","")
+              emb = p.get("embedded")
+              if isinstance(emb, dict):
+                  eb = emb.get("body_text") or ""
+                  if eb and t.lstrip().startswith("RT @") and t.rstrip().endswith("…"):
+                      m = _RT_PREFIX.match(t)
+                      return (m.group(1) if m else "RT: ") + eb
+              return t
+
+          # 上限按组织实际仓库数动态取：gh repo list 超出即截断，不会翻页
+          try:
+              _total = int(sh(["gh","api",f"orgs/{ORG}","--jq",".public_repos"]).strip())
+          except Exception:
+              _total = 0
+          _limit = str(_total + 50) if _total > 0 else "4000"
+          repos = sh(["gh","repo","list",ORG,"--limit",_limit,"--json","name",
+                      "--jq",".[].name"]).split()
+          repos = [r for r in repos if r not in EXCLUDE]
+          print(f"候选仓库 {len(repos)} 个")
+
+          accts = []          # 账号表：[{r,a,u,n,av}]
+          acct_map = {}       # (repo,acct) -> 账号编号
+          posts = []          # [账号编号, 文本, tweetid, 时间戳, [图片名...], 回复数]
+          all_replies = []    # [(账号编号, conversation_id, tweetid, 文本, 时间, reply_to_id)] 跨账号用
+
+          for repo in repos:
+              try:
+                  dirs = sh(["gh","api",f"repos/{ORG}/{repo}/contents/accounts",
+                             "--jq",'.[]|select(.type=="dir")|.name']).split()
+              except Exception:
+                  print(f"  ⏭️ {repo} 无 accounts，跳过"); continue
+              for acct in dirs:
+                  url = (f"https://raw.githubusercontent.com/{ORG}/{repo}/main/"
+                         f"accounts/{acct}/wayback_snapshots/index.json")
+                  try:
+                      with urllib.request.urlopen(url, timeout=60) as r:
+                          data = json.load(r)
+                  except Exception as e:
+                      print(f"  ⚠️ {repo}/{acct} 读取失败: {e}"); continue
+                  # 账号头像：只挑本地已下载的（../avatar/...），取最新一条；跳过没下载的原始链接
+                  acct_lower = acct.lower()
+                  av_cands = [x for x in data
+                              if (x.get("author_username","") or "").lstrip("@").lower() == acct_lower
+                              and (x.get("author_avatar","") or "").startswith("../avatar/")]
+                  av_cands.sort(key=lambda x: x.get("timestamp",""), reverse=True)
+                  if av_cands:
+                      acct_avatar = os.path.basename(av_cands[0]["author_avatar"])
+                  else:
+                      fb = [x for x in data
+                            if not x.get("is_virtual")
+                            and (x.get("author_avatar","") or "").startswith("../avatar/")]
+                      fb.sort(key=lambda x: x.get("timestamp",""), reverse=True)
+                      if fb:
+                          acct_avatar = os.path.basename(fb[0]["author_avatar"])
+                      else:
+                          acct_avatar = ""
+                          for x in data:
+                              wa = x.get("wanted_avatars") or []
+                              if wa: acct_avatar = os.path.basename(wa[0]); break
+                  # 先统计每个对话的回复数（该账号自己的回复）
+                  reply_cnt = {}
+                  for p in data:
+                      if p.get("is_reply") and not p.get("is_virtual"):
+                          cid = p.get("conversation_id")
+                          if cid: reply_cnt[cid] = reply_cnt.get(cid, 0) + 1
+                  cnt = 0
+                  for p in data:
+                      if p.get("is_reply") or p.get("is_virtual"): continue
+                      key = (repo, acct)
+                      if key not in acct_map:
+                          acct_map[key] = len(accts)
+                          accts.append({
+                              "r": repo, "a": acct,
+                              "u": p.get("author_username",""),
+                              "n": p.get("author_name",""),
+                              "av": acct_avatar,
+                          })
+                      ai = acct_map[key]
+                      tid = p.get("tweet_id","")
+                      posts.append([
+                          ai,
+                          resolve_text(p),
+                          tid,
+                          p.get("timestamp",""),
+                          [os.path.basename(x) for x in
+                           ((p.get("wanted_images") or []) + (p.get("wanted_videos") or []))],
+                          reply_cnt.get(tid, 0),
+                          # 有无引用/转推的原推（1/0）。只存标记位，内容由前端按需
+                          # 从该账号 index.json 懒加载，避免把 embedded 正文塞进索引。
+                          1 if (p.get("has_quoted") and p.get("quoted_id")) else 0,
+                      ])
+                      cnt += 1
+                  # 收集该账号的回复（稍后筛出"回复别的站内账号"的跨账号回复）
+                  ai = acct_map.get((repo, acct))
+                  if ai is not None:
+                      for p in data:
+                          if p.get("is_reply") and not p.get("is_virtual"):
+                              cid = p.get("conversation_id")
+                              if not cid: continue
+                              all_replies.append((
+                                  ai, cid, p.get("tweet_id",""),
+                                  resolve_text(p),
+                                  p.get("timestamp",""),
+                                  p.get("reply_to_id","") or "",
+                              ))
+                  print(f"  ✓ {repo}/{acct}: 主推文 {cnt} 条")
+
+          # 按时间倒序（最新在前）。两种时间格式需统一解析成时间戳再比较，
+          # 否则老推特格式(Wed Sep..)会因首字母 > 数字而全排到最前。
+          posts.sort(key=lambda x: parse_ts(x[3]), reverse=True)
+
+          # ── 跨账号回复索引 cross-replies.json ──
+          # 只收"回复别的站内账号主推文"的回复（回复自己的主推文，展开时读本账号 json 即可显示）
+          mid2ai = {pp[2]: pp[0] for pp in posts}   # 主推文id -> 所属账号编号
+          cross = {}
+          for (ai, cid, rid, txt, ts, rt) in all_replies:
+              owner = mid2ai.get(cid)
+              if owner is None: continue            # 对话根不在站内
+              if owner == ai: continue              # 回复自己，跳过
+              cross.setdefault(cid, []).append([ai, rid, txt, ts, rt])
+          for cid in cross:                          # 每个对话内按时间升序
+              cross[cid].sort(key=lambda x: parse_ts(x[3]))
+
+          # 把跨账号回复数补加到对应主推文的回复计数（让"展开回复 N"含跨账号那几条）
+          mid2post = {}
+          for pp in posts:
+              if pp[2] not in mid2post: mid2post[pp[2]] = pp
+          for cid, reps in cross.items():
+              if cid in mid2post: mid2post[cid][5] += len(reps)
+
+          result = {"accts": accts, "posts": posts}
+          with open("search-index.json","w",encoding="utf-8") as f:
+              json.dump(result, f, ensure_ascii=False, separators=(",",":"))
+          print(f"=== 账号 {len(accts)} 个，主推文 {len(posts)} 条，"
+                f"{os.path.getsize('search-index.json')} 字节 ===")
+
+          # 全站时间线"最新一批"轻量文件：只取最新 2000 条主推文，
+          # App 全站默认先加载这个(小、秒开)，滑到底再加载完整 search-index.json。
+          recent = {"accts": accts, "posts": posts[:2000]}
+          with open("timeline-recent.json","w",encoding="utf-8") as f:
+              json.dump(recent, f, ensure_ascii=False, separators=(",",":"))
+          print(f"=== 最新时间线 {len(recent['posts'])} 条，"
+                f"{os.path.getsize('timeline-recent.json')} 字节 ===")
+
+          with open("cross-replies.json","w",encoding="utf-8") as f:
+              json.dump(cross, f, ensure_ascii=False, separators=(",",":"))
+          print(f"=== 跨账号对话 {len(cross)} 组，回复 {sum(len(v) for v in cross.values())} 条，"
+                f"{os.path.getsize('cross-replies.json')} 字节 ===")
+
+          # 首页预览样本：让 portal 不必为了 3 条预览去下整个 search-index.json
+          import random
+          pv_cand = [p for p in posts if (p[1] or "").strip()]
+          pv_hot  = sorted(pv_cand, key=lambda p: p[5], reverse=True)[:120]
+          pv_rest = [p for p in pv_cand if p not in pv_hot]
+          random.seed()
+          pv_pick = pv_hot + random.sample(pv_rest, min(180, len(pv_rest)))
+          pv_accts = {}
+          pv_posts = []
+          for p in pv_pick:
+              ai = p[0]
+              if ai not in pv_accts:
+                  pv_accts[ai] = len(pv_accts)
+              pv_posts.append([pv_accts[ai], (p[1] or "")[:200], p[2], p[5]])
+          preview = {
+              "accts": [accts[ai] for ai, _ in sorted(pv_accts.items(), key=lambda x: x[1])],
+              "posts": pv_posts,
+          }
+          with open("preview.json","w",encoding="utf-8") as f:
+              json.dump(preview, f, ensure_ascii=False, separators=(",",":"))
+          print(f"=== 首页预览样本 {len(pv_posts)} 条，{os.path.getsize('preview.json')} 字节 ===")
+          PYEOF
+          python3 /tmp/build.py
+
+      - name: 推送 search-index.json
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add search-index.json cross-replies.json preview.json timeline-recent.json
+          if git diff --cached --quiet; then echo "索引无变化"; exit 0; fi
+          git commit -m "🔍 更新全站搜索索引 $(date -u +%Y-%m-%d) [skip ci]"
+          git push

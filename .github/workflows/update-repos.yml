@@ -1,0 +1,83 @@
+name: 更新仓库列表
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: 生成 repos.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 上限必须大于组织实际仓库数：gh repo list 超出即截断，不会自动翻页。
+          # 这里按实际数量动态取，避免以后再次撞墙。
+          TOTAL=$(gh api "orgs/TwitterArchiver-guying" --jq '.public_repos' 2>/dev/null || echo 0)
+          LIMIT=$(( TOTAL > 0 ? TOTAL + 50 : 4000 ))
+          echo "组织仓库数 ${TOTAL}，本次拉取上限 ${LIMIT}"
+          gh repo list TwitterArchiver-guying --limit "$LIMIT" --json name,description \
+            --jq '.[] | select(
+              .name != "Dispatcher" and
+              .name != ".github" and
+              .name != "home" and
+              .name != "project-starter" and
+              .name != "TwitterArchiver-guying.github.io"
+            ) | [.name, (.description // "")] | @tsv' \
+            | sort | while IFS=$'\t' read -r REPO REPO_DESC; do
+            [ -z "$REPO" ] && continue
+
+            # 遍历 accounts/ 下【所有】子目录：一个仓库可能装多个账号，每个都要单独出一张卡
+            ACCOUNT_DIRS=$(gh api "repos/TwitterArchiver-guying/$REPO/contents/accounts" \
+              --jq 'if type=="array" then (.[] | select(.type=="dir") | .name) else empty end' \
+              2>/dev/null | grep -E '^[A-Za-z0-9_.-]+$' | sort || true)
+            [ -z "$ACCOUNT_DIRS" ] && ACCOUNT_DIRS="$REPO"
+
+            echo "$ACCOUNT_DIRS" | while IFS= read -r ACCOUNT_DIR; do
+              [ -z "$ACCOUNT_DIR" ] && continue
+
+              PROFILE=$(gh api \
+                "repos/TwitterArchiver-guying/$REPO/contents/accounts/$ACCOUNT_DIR/wayback_snapshots/profile.json" \
+                --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || echo '{}')
+
+              DISP=$(echo "$PROFILE" | jq -r '.name     // ""' 2>/dev/null || echo "")
+              USER=$(echo "$PROFILE" | jq -r '.username // ""' 2>/dev/null || echo "")
+              [ -z "$USER" ] && USER="@${ACCOUNT_DIR}"
+              # 真实头像路径（profile.json 的 avatar，如 avatar/avatar_xxx.jpg）；
+              # 缺省回退到 avatar/avatar.jpg
+              AVATAR=$(echo "$PROFILE" | jq -r '.avatar // ""' 2>/dev/null || echo "")
+              [ -z "$AVATAR" ] && AVATAR="avatar/avatar.jpg"
+
+              # AnIncanescence 主账号用仓库自介，其他用 bio（完整，CSS 控制省略）
+              if [ "$REPO" = "AnIncanescence" ] && [ "$ACCOUNT_DIR" = "AnIncandescence" ]; then
+                DESC="$REPO_DESC"
+              else
+                DESC=$(echo "$PROFILE" | jq -r '.bio // ""' 2>/dev/null || echo "")
+              fi
+
+              jq -n \
+                --arg repo "$REPO" \
+                --arg acct "$ACCOUNT_DIR" \
+                --arg name "$DISP" \
+                --arg user "$USER" \
+                --arg desc "$DESC" \
+                --arg avatar "$AVATAR" \
+                '{repo:$repo, acct:$acct, name:$name, username:$user, description:$desc, avatar:$avatar}'
+            done
+          done | jq -s '.' > repos.json
+
+      - name: 推送
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add repos.json
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: 更新仓库列表 [skip ci]"
+          git push
