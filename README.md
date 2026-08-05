@@ -81,9 +81,3 @@ TwitterArchiver 是一个基于 [Wayback Machine](https://web.archive.org) 的�
 本项目所有代码以 [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.html) 协议开源。
 
 > 存档内容本身的版权归原作者所有。本组织仅做数字保存，不主张任何内容权利；如果你是某个存档账号的本人或权利人，希望移除相应内容，请提 Issue。
-
----
-
-## 赞助
-
-![赞助图片](https://free.picui.cn/free/2026/06/24/6a3b25866f0fd.jpg)
