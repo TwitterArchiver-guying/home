@@ -2,7 +2,7 @@
 
 > 让每一个声音，都不会在网络里消散。
 
-## [全站时间线](https://twitterarchiver.github.io/home/search.html) · [Home](https://twitterarchiver.github.io/home/)
+## [全站时间线](https://twitterarchiver-guying.github.io/home/search.html) · [Home](https://twitterarchiver-guying.github.io/home/)
 
 ---
 
@@ -12,7 +12,7 @@ TwitterArchiver 是一个基于 [Wayback Machine](https://web.archive.org) 的�
 
 每个仓库对应一个账号的完整推文存档——HTML 快照、图片、视频、头像，一并保存，可离线阅读，永久留存。
 
-这个项目，这里的一切最初都是为了 **[@AnIncandescence](https://github.com/TwitterArchiver/AnIncanescence)** 而创建。
+这个项目，这里的一切最初都是为了 **[@AnIncandescence](https://github.com/TwitterArchiver-guying/AnIncanescence)** 而创建。
 
 她的账号被封禁，但是她永远也不会被遗忘。
 
@@ -39,7 +39,7 @@ TwitterArchiver 是一个基于 [Wayback Machine](https://web.archive.org) 的�
 | `preview.json` | 首页预览数据 |
 | `avatars/` | 聚合的账号头像 |
 
-数据由 [`.github/workflows`](https://github.com/TwitterArchiver/home/tree/main/.github/workflows) 下的工作流定期从各存档仓库汇总生成。
+数据由 [`.github/workflows`](https://github.com/TwitterArchiver-guying/home/tree/main/.github/workflows) 下的工作流定期从各存档仓库汇总生成。
 
 ---
 
@@ -49,23 +49,22 @@ TwitterArchiver 是一个基于 [Wayback Machine](https://web.archive.org) 的�
 
 | 项目 | 说明 |
 | --- | --- |
-| [**TwitterArchiver**](https://github.com/TwitterArchiver) | 组织首页，含完整的项目生态说明 |
-| [**TwitterArchiverApp**](https://github.com/sjshb57/TwitterArchiverApp) | Android 客户端 |
-| [**IncandescenceReader**](https://github.com/sjshb57/IncandescenceReader) | 桌面离线阅读器（Electron） |
-| [**IncandescenceArchiver**](https://github.com/sjshb57/IncandescenceArchiver) | 存档工具 `archive.py`，抓取 Wayback 快照并生成索引 |
+| [**TwitterArchiver**](https://github.com/TwitterArchiver-guying) | 组织首页，含完整的项目生态说明 |
+| [**TwitterArchiverApp**](https://github.com/guying2323/TwitterArchiverApp) | Android 客户端 |
+| [**IncandescenceArchiver**](https://github.com/guying2323/IncandescenceArchiver) | 存档工具 `archive.py`，抓取 Wayback 快照并生成索引 |
 
 
 ---
 
 ## 如何存档你关注的账号
 
-任何人都可以 fork [sjshb57/IncandescenceArchiver](https://github.com/sjshb57/IncandescenceArchiver)，为自己关注的账号建立一份永久存档。
+任何人都可以 fork [guying2323/IncandescenceArchiver](https://github.com/guying2323/IncandescenceArchiver)，为自己关注的账号建立一份永久存档。
 
 脚本会自动从 Wayback Machine 拉取推文数据，生成可在线阅读的静态页面，部署到 GitHub Pages。
 
-→ **[查看使用教程](https://github.com/sjshb57/IncandescenceArchiver)**
+→ **[查看使用教程](https://github.com/guying2323/IncandescenceArchiver)**
 
-如果希望直接收录进本组织，也可以 **[在这里提交申请](https://twtterarchiver.github.io/home/guestbook.html)**（Android 应用内也能直接提交）。
+如果希望直接收录进本组织，也可以 **[在这里提交申请](https://twitterarchiver-guying.github.io/home/guestbook.html)**（Android 应用内也能直接提交）。
 
 ---
 
@@ -73,7 +72,7 @@ TwitterArchiver 是一个基于 [Wayback Machine](https://web.archive.org) 的�
 
 本组织下的每个仓库都是一个独立的账号存档，可直接访问对应的 GitHub Pages 页面阅读。
 
-完整清单见 **[全站时间线](https://twitterarchiver.github.io/home/search.html)**。
+完整清单见 **[全站时间线](https://twitterarchiver-guying.github.io/home/search.html)**。
 
 ---
 
